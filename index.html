@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -158,13 +159,23 @@
         }
 
         @keyframes popIn {
-            0% { transform: scale(0.9); }
-            100% { transform: scale(1); }
+            0% {
+                transform: scale(0.9);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         @keyframes pulse {
-            0% { opacity: 0.6; }
-            100% { opacity: 1; }
+            0% {
+                opacity: 0.6;
+            }
+
+            100% {
+                opacity: 1;
+            }
         }
 
         #gameUI {
@@ -276,6 +287,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -285,13 +297,15 @@
 
         <div class="wallet-bar">
             <button id="connectBtn">Connect & Auto-Sign</button>
-            <button id="refundBtn" title="Sweep remaining testnet ETH back to your MetaMask wallet">Refund Session</button>
+            <button id="refundBtn" title="Sweep remaining testnet ETH back to your MetaMask wallet">Refund
+                Session</button>
         </div>
 
         <div class="board" id="board"></div>
 
         <div id="gameUI">
-            <input type="text" id="guessInput" maxlength="5" placeholder="GUESS" disabled autocomplete="off" spellcheck="false">
+            <input type="text" id="guessInput" maxlength="5" placeholder="GUESS" disabled autocomplete="off"
+                spellcheck="false">
             <button id="guessBtn" disabled>Submit</button>
             <button id="restartBtn" style="display: none;">Restart</button>
         </div>
@@ -302,7 +316,8 @@
         </div>
 
         <footer>
-            Contract: <a href="https://sepolia.etherscan.io/address/0x7A5f99F2616Cd2E4E6935d7b1dEe486724b1aDeb" target="_blank" rel="noopener">0x7A5f...aDeb</a>
+            Contract: <a href="https://sepolia.etherscan.io/address/0x7A5f99F2616Cd2E4E6935d7b1dEe486724b1aDeb"
+                target="_blank" rel="noopener">0x7A5f...aDeb</a>
         </footer>
     </div>
 
@@ -340,7 +355,6 @@
             for (let r = 0; r < maxGuesses; r++) {
                 const row = document.createElement("div");
                 row.className = "board-row";
-                row.id = `row-${r}`;
                 for (let c = 0; c < 5; c++) {
                     const tile = document.createElement("div");
                     tile.className = "tile";
@@ -618,4 +632,5 @@
         }
     </script>
 </body>
+
 </html>
