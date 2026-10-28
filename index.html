@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>On-Chain Wordle</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121213;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 24px 16px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 420px;
+            background: #1a1a1b;
+            border: 1px solid #2f2f31;
+            border-radius: 12px;
+            padding: 20px 18px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #2f2f31;
+            padding-bottom: 12px;
+        }
+
+        h1 {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .network-tag {
+            font-size: 12px;
+            color: #818384;
+        }
+
+        .wallet-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            align-items: center;
+        }
+
+        button {
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 13px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.15s ease, opacity 0.15s ease;
+        }
+
+        #connectBtn {
+            flex: 1;
+            padding: 10px 12px;
+            background: #538d4e;
+            color: #ffffff;
+        }
+
+        #connectBtn:hover:not(:disabled) {
+            background: #467a42;
+        }
+
+        #connectBtn.connected {
+            background: #2a3a29;
+            color: #79a874;
+            border: 1px solid #3c543b;
+            cursor: default;
+        }
+
+        #refundBtn {
+            display: none;
+            padding: 10px 12px;
+            background: #2a2a2c;
+            color: #d7dadc;
+            border: 1px solid #3a3a3c;
+            white-space: nowrap;
+        }
+
+        #refundBtn:hover:not(:disabled) {
+            background: #3a3a3c;
+        }
+
+        .board {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin: 0 auto 16px auto;
+            width: fit-content;
+        }
+
+        .board-row {
+            display: flex;
+            gap: 6px;
+        }
+
+        .tile {
+            width: 48px;
+            height: 48px;
+            border: 2px solid #3a3a3c;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            font-weight: 700;
+            text-transform: uppercase;
+            user-select: none;
+            transition: all 0.25s ease;
+            background: #121213;
+        }
+
+        .tile.filled {
+            border-color: #565758;
+            animation: popIn 0.1s ease-in-out;
+        }
+
+        .tile.correct {
+            background: #538d4e !important;
+            border-color: #538d4e !important;
+            color: #ffffff;
+        }
+
+        .tile.present {
+            background: #b59f3b !important;
+            border-color: #b59f3b !important;
+            color: #ffffff;
+        }
+
+        .tile.absent {
+            background: #3a3a3c !important;
+            border-color: #3a3a3c !important;
+            color: #ffffff;
+        }
+
+        .tile.pending {
+            border-color: #b59f3b;
+            animation: pulse 1s infinite alternate;
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0.9); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+
+        #gameUI {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+            align-items: stretch;
+            width: 100%;
+        }
+
+        #guessInput {
+            flex: 1 1 auto;
+            min-width: 0;
+            background: #121213;
+            border: 1px solid #3a3a3c;
+            border-radius: 6px;
+            color: #ffffff;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 18px;
+            font-weight: 700;
+            text-align: center;
+            letter-spacing: 4px;
+            padding: 8px 10px;
+            text-transform: uppercase;
+        }
+
+        #guessInput:focus {
+            outline: none;
+            border-color: #565758;
+        }
+
+        #guessInput:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #guessBtn {
+            flex: 0 0 auto;
+            padding: 0 16px;
+            background: #3a3a3c;
+            color: #ffffff;
+            min-height: 40px;
+        }
+
+        #guessBtn:hover:not(:disabled) {
+            background: #565758;
+        }
+
+        #guessBtn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        #restartBtn {
+            flex: 0 0 auto;
+            padding: 0 12px;
+            background: #8b2626;
+            color: #ffffff;
+            min-height: 40px;
+        }
+
+        #restartBtn:hover:not(:disabled) {
+            background: #a12d2d;
+        }
+
+        #restartBtn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 13px;
+            min-height: 20px;
+        }
+
+        #guessCounter {
+            font-weight: 600;
+            color: #d7dadc;
+        }
+
+        #status {
+            color: #b59f3b;
+            font-weight: 500;
+            text-align: right;
+            max-width: 65%;
+            word-break: break-word;
+        }
+
+        footer {
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px solid #2f2f31;
+            text-align: center;
+            font-size: 12px;
+            color: #818384;
+        }
+
+        footer a {
+            color: #a7a9aa;
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>On-Chain Wordle</h1>
+            <p class="network-tag">Sepolia Testnet &bull; Smart Contract Validator</p>
+        </header>
+
+        <div class="wallet-bar">
+            <button id="connectBtn">Connect & Auto-Sign</button>
+            <button id="refundBtn" title="Sweep remaining testnet ETH back to your MetaMask wallet">Refund Session</button>
+        </div>
+
+        <div class="board" id="board"></div>
+
+        <div id="gameUI">
+            <input type="text" id="guessInput" maxlength="5" placeholder="GUESS" disabled autocomplete="off" spellcheck="false">
+            <button id="guessBtn" disabled>Submit</button>
+            <button id="restartBtn" style="display: none;">Restart</button>
+        </div>
+
+        <div class="info-row">
+            <p id="guessCounter">Guesses: 0 / 6</p>
+            <p id="status"></p>
+        </div>
+
+        <footer>
+            Contract: <a href="https://sepolia.etherscan.io/address/0x7A5f99F2616Cd2E4E6935d7b1dEe486724b1aDeb" target="_blank" rel="noopener">0x7A5f...aDeb</a>
+        </footer>
+    </div>
+
+    <script>
+        let provider, mainSigner, burnerWallet, contract;
+        let guessCount = 0;
+        const maxGuesses = 6;
+        let isTxPending = false;
+        let currentSessionId = 0;
+
+        const contractAddress = "0x7A5f99F2616Cd2E4E6935d7b1dEe486724b1aDeb";
+
+        const abi = [
+            "function guessWord(bytes5 _guess) external",
+            "event GuessResult(address player, bytes5 guess, uint16 result)"
+        ];
+
+        let burnerPK = localStorage.getItem('wordlePK');
+        if (!burnerPK) {
+            burnerPK = ethers.Wallet.createRandom().privateKey;
+            localStorage.setItem('wordlePK', burnerPK);
+        }
+
+        const connectBtn = document.getElementById("connectBtn");
+        const refundBtn = document.getElementById("refundBtn");
+        const guessInput = document.getElementById("guessInput");
+        const guessBtn = document.getElementById("guessBtn");
+        const restartBtn = document.getElementById("restartBtn");
+        const statusEl = document.getElementById("status");
+        const counterEl = document.getElementById("guessCounter");
+        const boardEl = document.getElementById("board");
+
+        function initBoard() {
+            boardEl.innerHTML = "";
+            for (let r = 0; r < maxGuesses; r++) {
+                const row = document.createElement("div");
+                row.className = "board-row";
+                row.id = `row-${r}`;
+                for (let c = 0; c < 5; c++) {
+                    const tile = document.createElement("div");
+                    tile.className = "tile";
+                    tile.id = `tile-${r}-${c}`;
+                    row.appendChild(tile);
+                }
+                boardEl.appendChild(row);
+            }
+        }
+        initBoard();
+
+        guessInput.addEventListener("input", () => {
+            if (guessCount >= maxGuesses) return;
+            const text = guessInput.value.toUpperCase();
+            for (let c = 0; c < 5; c++) {
+                const tile = document.getElementById(`tile-${guessCount}-${c}`);
+                if (!tile) continue;
+                if (c < text.length) {
+                    tile.innerText = text[c];
+                    tile.classList.add("filled");
+                } else {
+                    tile.innerText = "";
+                    tile.classList.remove("filled");
+                }
+            }
+        });
+
+        connectBtn.onclick = async () => {
+            if (!window.ethereum) {
+                statusEl.innerText = "MetaMask not detected.";
+                return;
+            }
+            try {
+                await window.ethereum.request({ method: 'eth_requestAccounts' });
+                provider = new ethers.providers.Web3Provider(window.ethereum);
+                mainSigner = provider.getSigner();
+
+                burnerWallet = new ethers.Wallet(burnerPK, provider);
+                statusEl.innerText = "Checking session balance...";
+
+                const balance = await burnerWallet.getBalance();
+                if (balance.lt(ethers.utils.parseEther("0.002"))) {
+                    statusEl.innerText = "Confirm one-time funding in MetaMask...";
+                    try {
+                        const tx = await mainSigner.sendTransaction({
+                            to: burnerWallet.address,
+                            value: ethers.utils.parseEther("0.005")
+                        });
+                        await tx.wait();
+                    } catch (e) {
+                        statusEl.innerText = "Funding failed. Ensure you have Sepolia ETH.";
+                        return;
+                    }
+                }
+
+                contract = new ethers.Contract(contractAddress, abi, burnerWallet);
+                connectBtn.innerText = "Session Active";
+                connectBtn.classList.add("connected");
+                connectBtn.disabled = true;
+                refundBtn.style.display = "inline-block";
+                statusEl.innerText = "Ready! Submit your first guess.";
+
+                guessInput.disabled = false;
+                guessBtn.disabled = false;
+                guessInput.focus();
+            } catch (err) {
+                console.error(err);
+                statusEl.innerText = "Connection cancelled.";
+            }
+        };
+
+        refundBtn.onclick = async () => {
+            if (!burnerWallet || !provider || isTxPending) return;
+            try {
+                refundBtn.disabled = true;
+                statusEl.innerText = "Sweeping funds back to MetaMask...";
+                const balance = await burnerWallet.getBalance();
+                const gasPrice = await provider.getGasPrice();
+                const gasLimit = 21000;
+                const fee = gasPrice.mul(gasLimit);
+
+                if (balance.lte(fee)) {
+                    statusEl.innerText = "Session balance too low to refund.";
+                    refundBtn.disabled = false;
+                    return;
+                }
+
+                const sendAmount = balance.sub(fee);
+                const targetAddress = await mainSigner.getAddress();
+                const tx = await burnerWallet.sendTransaction({
+                    to: targetAddress,
+                    value: sendAmount,
+                    gasLimit: gasLimit,
+                    gasPrice: gasPrice
+                });
+                await tx.wait();
+                statusEl.innerText = "Session balance refunded to your wallet!";
+                refundBtn.style.display = "none";
+                guessInput.disabled = true;
+                guessBtn.disabled = true;
+                connectBtn.innerText = "Connect & Auto-Sign";
+                connectBtn.classList.remove("connected");
+                connectBtn.disabled = false;
+            } catch (err) {
+                console.error(err);
+                statusEl.innerText = "Refund failed.";
+                refundBtn.disabled = false;
+            }
+        };
+
+        guessInput.addEventListener("keypress", function (event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                if (!guessBtn.disabled && !isTxPending) {
+                    guessBtn.click();
+                }
+            }
+        });
+
+        guessBtn.onclick = async () => {
+            if (!contract) {
+                statusEl.innerText = "Please connect wallet first.";
+                return;
+            }
+            if (isTxPending) {
+                statusEl.innerText = "Transaction pending. Please wait...";
+                return;
+            }
+            if (guessCount >= maxGuesses) return;
+
+            const guess = guessInput.value.toUpperCase().trim();
+
+            if (!/^[A-Z]{5}$/.test(guess)) {
+                statusEl.innerText = "Guess must be 5 letters (A-Z).";
+                return;
+            }
+
+            const activeRow = guessCount;
+            const thisSessionId = currentSessionId;
+
+            isTxPending = true;
+            guessCount++;
+            counterEl.innerText = `Guesses: ${guessCount} / 6`;
+            restartBtn.style.display = "inline";
+            statusEl.innerText = "Validating on Sepolia...";
+
+            for (let c = 0; c < 5; c++) {
+                const tile = document.getElementById(`tile-${activeRow}-${c}`);
+                if (tile) {
+                    tile.innerText = guess[c];
+                    tile.classList.add("filled", "pending");
+                }
+            }
+
+            guessInput.value = "";
+            guessInput.disabled = false;
+            guessInput.focus();
+            guessBtn.disabled = true;
+
+            try {
+                const guessBytes5 = ethers.utils.toUtf8Bytes(guess);
+                const tx = await contract.guessWord(guessBytes5, { gasLimit: 120000 });
+                const receipt = await tx.wait();
+
+                if (thisSessionId !== currentSessionId) {
+                    return;
+                }
+
+                const event = receipt.events.find(e => e.event === 'GuessResult');
+                const packedResult = event.args.result;
+
+                let isWin = true;
+
+                for (let i = 0; i < 5; i++) {
+                    const tile = document.getElementById(`tile-${activeRow}-${i}`);
+                    if (!tile) continue;
+                    tile.classList.remove("pending");
+
+                    const squareStatus = (packedResult >> (i * 2)) & 3;
+                    if (squareStatus === 2) {
+                        tile.classList.add("correct");
+                    } else if (squareStatus === 1) {
+                        tile.classList.add("present");
+                        isWin = false;
+                    } else {
+                        tile.classList.add("absent");
+                        isWin = false;
+                    }
+                }
+
+                if (isWin) {
+                    statusEl.innerText = "Correct! You guessed the word.";
+                    guessInput.disabled = true;
+                    guessBtn.disabled = true;
+                } else if (guessCount >= maxGuesses) {
+                    statusEl.innerText = "Game Over! All 6 guesses used.";
+                    guessInput.disabled = true;
+                    guessBtn.disabled = true;
+                } else {
+                    statusEl.innerText = "Processed! Next guess.";
+                    guessBtn.disabled = false;
+                }
+            } catch (error) {
+                console.error(error);
+                if (thisSessionId !== currentSessionId) return;
+
+                for (let c = 0; c < 5; c++) {
+                    const tile = document.getElementById(`tile-${activeRow}-${c}`);
+                    if (tile) tile.classList.remove("pending");
+                }
+
+                statusEl.innerText = "Transaction failed to process.";
+                if (guessCount > 0) {
+                    guessCount--;
+                    counterEl.innerText = `Guesses: ${guessCount} / 6`;
+                }
+
+                const nextRow = guessCount + 1;
+                for (let c = 0; c < 5; c++) {
+                    const nextTile = document.getElementById(`tile-${nextRow}-${c}`);
+                    if (nextTile) {
+                        nextTile.innerText = "";
+                        nextTile.classList.remove("filled");
+                    }
+                }
+
+                const currentText = guessInput.value.toUpperCase();
+                for (let c = 0; c < 5; c++) {
+                    const activeTile = document.getElementById(`tile-${guessCount}-${c}`);
+                    if (activeTile) {
+                        activeTile.innerText = c < currentText.length ? currentText[c] : "";
+                        activeTile.classList.toggle("filled", c < currentText.length);
+                    }
+                }
+
+                guessInput.disabled = false;
+                guessBtn.disabled = false;
+                guessInput.focus();
+            } finally {
+                isTxPending = false;
+            }
+        };
+
+        restartBtn.onclick = () => {
+            if (isTxPending) {
+                statusEl.innerText = "Waiting for in-flight transaction to settle...";
+                restartBtn.disabled = true;
+
+                const checkInterval = setInterval(() => {
+                    if (!isTxPending) {
+                        clearInterval(checkInterval);
+                        restartBtn.disabled = false;
+                        resetGame();
+                    }
+                }, 500);
+                return;
+            }
+            resetGame();
+        };
+
+        function resetGame() {
+            currentSessionId++;
+            guessCount = 0;
+            initBoard();
+            guessInput.value = "";
+            statusEl.innerText = "Game restarted. Enter a new guess.";
+            counterEl.innerText = `Guesses: 0 / 6`;
+            restartBtn.style.display = "none";
+
+            if (contract) {
+                guessInput.disabled = false;
+                guessBtn.disabled = false;
+                guessInput.focus();
+            }
+        }
+    </script>
+</body>
+</html>
