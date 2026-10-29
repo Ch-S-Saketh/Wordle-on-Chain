@@ -1,99 +1,86 @@
 # Wordle On-Chain (Mini Version)
 
-A decentralized, on-chain implementation of the Wordle word-guessing game built on Ethereum Sepolia testnet. Guess validation logic is executed securely via a smart contract, paired with a web frontend featuring an interactive $6 \times 5$ board and ephemeral session keys for popup-free gameplay.
+An on-chain Wordle on the Ethereum Sepolia testnet. A smart contract (`Wordle.sol`) checks each guess and publishes the result as an event. A single-page frontend (`index.html`) shows a 6 x 5 board and uses a temporary session key so players don't need a MetaMask popup for every guess.
 
 ---
 
-## 1. Understanding Wordle On-Chain & Use Cases
+## 1. Why Wordle On-Chain?
 
-In standard web-based Wordle, word validation occurs on a centralized backend server or client-side script where the solution can be inspected. Building Wordle on-chain establishes a trustless architecture:
+In normal Wordle, a server or script checks your guess and you must trust it. With a smart contract:
+- **Tamper-proof rules:** The deployed contract cannot be edited, so the rules for green / yellow / gray cannot change mid-game.
+- **Publicly auditable results:** Every guess and result is emitted as a `GuessResult` event that anyone can read on-chain.
+- **No game server:** The checking logic runs on the Ethereum network, so there is no backend to go down.
 
-### Key Advantages
-- **Trustless & Tamper-Proof Execution**: The evaluation logic resides inside an immutable smart contract (`Wordle.sol`). Game rules cannot be altered mid-game.
-- **Provable Fairness**: Every guess and its validation result are emitted as immutable events (`GuessResult`) on the Ethereum network, enabling independent auditing.
-- **Decentralized State**: Operates independently of centralized web servers, eliminating server downtime and single points of failure.
-
-### Potential Web3 Use Cases
-- **GameFi Tournaments**: Smart contracts can pool entry fees into an escrow and automatically distribute prize pools to players solving words in the fewest turns.
-- **On-Chain Achievements**: Successfully guessing words can trigger automated minting of soulbound dynamic NFTs representing player streaks.
-- **Trustless Mini-Games**: Serves as a foundational model for on-chain trivia, puzzles, and verifiable interactive experiences.
+**Possible use cases:** tournaments where a contract holds entry fees and pays the fastest solver, NFT badges for solve streaks, and other verifiable on-chain puzzles or trivia.
 
 ---
 
-## 2. Smart Contract Architecture (`Wordle.sol`)
+## 2. Smart Contract (`Wordle.sol`)
 
-- **Network**: Ethereum Sepolia Testnet (Chain ID: `11155111`)
-- **Contract Address**: [`0x7A5f99F2616Cd2E4E6935d7b1dEe486724b1aDeb`](https://sepolia.etherscan.io/address/0x7A5f99F2616Cd2E4E6935d7b1dEe486724b1aDeb)
-- **Compiler**: Solidity `^0.8.0`
+- **Network:** Ethereum Sepolia Testnet (Chain ID 11155111)
+- **Contract:** [`0x7A5f99F2616Cd2E4E6935d7b1dEe486724b1aDeb`](https://sepolia.etherscan.io/address/0x7A5f99F2616Cd2E4E6935d7b1dEe486724b1aDeb)
+- **Compiler:** Solidity `^0.8.0`
 
-### Validation Algorithm & Bit-Packing
-The contract validates guesses against a target word (`APPLE`) using a two-pass algorithm to accurately handle duplicate characters:
+### How a guess is checked
+The contract compares the guess to the pre-set target word (`APPLE`) in two passes, so repeated letters are handled correctly:
+1. **Input:** The guess is a `bytes5`, so the EVM itself enforces exactly 5 bytes.
+2. **Pass 1, green:** Mark letters in the same position in guess and target, and mark those target positions as used.
+3. **Pass 2, yellow:** For each remaining guess letter, look for the same letter in an unused target position. If found, mark it yellow and mark that target position as used.
+4. **Result:** The 5 results are packed into one `uint16`, 2 bits per letter: `0` gray (absent), `1` yellow (misplaced), `2` green (correct).
 
-1. **Type-Level Enforcement (`bytes5`)**: Accepting a fixed `bytes5` parameter enforces 5-byte length at the EVM ABI decoding level, eliminating the need for runtime length checks.
-2. **First Pass (Green / Exact Matches)**: Matches characters at identical indices (`guess[i] == target[i]`). Sets position bits to prevent double-matching.
-3. **Second Pass (Yellow / Misplaced Matches)**: For remaining unmatched characters, checks for occurrences in unflagged target positions.
-4. **Gas-Efficient 2-Bit Result Encoding**:
-   The status of all 5 letters is packed into a single 10-bit integer (`uint16`) emitted in the `GuessResult` event:
-   - `0` (`00`): ⬛ Absent
-   - `1` (`01`): 🟨 Misplaced
-   - `2` (`10`): 🟩 Correct
+$$\text{result} = \sum_{i=0}^{4} (\text{status}_i \ll (i \times 2))$$
 
-   $$\text{result} = \sum_{i=0}^{4} (\text{status}_i \ll (i \times 2))$$
+Event read by the frontend to color the tiles:
+```solidity
+event GuessResult(address player, bytes5 guess, uint16 result);
+```
 
-5. **Event Specification**:
-   ```solidity
-   event GuessResult(address player, bytes5 guess, uint16 result);
-   ```
-
-### Gas Optimizations
-- **Bytecode Constant (`bytes5 constant`)**: Inlines the target word directly into runtime bytecode (`PUSH5`), saving ~2,100 gas by eliminating `SLOAD` storage operations.
-- **Type-Level Validation**: Uses `bytes5` to avoid dynamic string decoding, calldata expansion, and runtime length reverts.
-- **Unchecked Loop Increments (`unchecked { ++i; }`)**: Bypasses redundant integer overflow checks on loops bounded at 5 iterations.
-- **Native Word Size (`uint256`)**: Employs 32-byte EVM registers for loop indices and bitmasks to avoid register truncation opcodes (`AND 0xff`).
+### Gas optimizations
+- **`bytes5 constant`:** The target word lives in the contract code, not storage, avoiding a storage read (about 2,100 gas).
+- **`bytes5` input:** No dynamic string decoding or runtime length check.
+- **`unchecked { ++i; }`:** Skips overflow checks on loop counters that never exceed 5.
+- **`uint256` indexes and bitmasks:** Matches the EVM's native 32-byte word size.
 
 ---
 
-## 3. Frontend Interface (`index.html`)
+## 3. Frontend (`index.html`)
 
-A single-page interface built with **Ethers.js (v5)** connecting directly to the Sepolia smart contract.
+A single page using Ethers.js v5 that talks directly to the contract.
 
-### Features
-- **Ephemeral Session Key (Auto-Signing)**: Standard Web3 DApps require a MetaMask confirmation for every on-chain move. To eliminate this UX bottleneck, an ephemeral keypair is generated in `localStorage` and funded once (`0.005 Sepolia ETH`) via MetaMask. Subsequent guesses are signed automatically in the background.
-- **$6 \times 5$ Interactive Board**: Replicates the classic Wordle layout. Letters render as you type and flip into their verified colors (`🟩`, `🟨`, `⬛`) upon event receipt.
-- **Pre-Typing Support**: Players can type their next 5-letter word into the input while the current guess is confirming on-chain.
-- **Race-Condition Safe Restart**: If a restart is triggered during an in-flight transaction, the interface awaits settlement before clearing state, preventing Ethereum nonce collisions.
-- **Session Refund**: A "Refund Session" button sweeps any remaining burner wallet balance back to the player's primary MetaMask account.
+- **Session key (auto-signing):** A temporary wallet key is created in the browser (`localStorage`) and funded once with 0.005 Sepolia ETH through MetaMask. After that, guesses are signed automatically.
+- **Network check:** The page verifies MetaMask is on Sepolia before sending any funds.
+- **6 x 5 board:** Letters appear as you type and turn green / yellow / gray when the result event arrives.
+- **Pre-typing:** You can type your next word while the current guess confirms.
+- **Safe restart:** Restarting during an in-flight transaction waits for it to finish, avoiding nonce errors.
+- **Refund Session:** Sends leftover ETH from the session wallet back to MetaMask.
 
 ---
 
-## 4. Setup and Usage Instructions
+## 4. Setup and Usage
 
-### Prerequisites
-1. Install the [MetaMask extension](https://metamask.io/).
-2. Switch MetaMask network to **Sepolia Testnet**.
-3. Ensure your wallet has Sepolia testnet ETH.
+- **Prerequisites:** the [MetaMask extension](https://metamask.io/), set to the Sepolia Testnet, with some Sepolia test ETH from a faucet.
+- **Run locally:** download `Wordle.sol`, `index.html` and `README.md`, then open `index.html` in a browser or serve it:
+  ```bash
+  python -m http.server 8000 # or: npx serve .
+  ```
+  Open `http://localhost:8000`.
 
-### Running Locally
-1. Clone or download the repository files:
-   - `Wordle.sol`
-   - `index.html`
-   - `README.md`
-2. Open `index.html` in any web browser, or serve it locally:
-   ```bash
-   # Python 3
-   python -m http.server 8000
-
-   # Node.js
-   npx serve .
-   ```
-3. Navigate to `http://localhost:8000` (or open `index.html` directly).
-
-### Gameplay Walkthrough
-1. Click **"Connect & Auto-Sign"** and approve the MetaMask connection.
-2. Confirm the one-time funding prompt (`0.005 Sepolia ETH`) to activate background signing.
+### How to play
+1. Click **"Connect & Auto-Sign"** and approve the connection.
+2. Approve the one-time funding transaction (0.005 Sepolia ETH) to the session wallet.
 3. Type a 5-letter word and press <kbd>Enter</kbd> or click **Submit**.
-4. The board updates with on-chain verification feedback:
-   - 🟩 : Correct letter and position.
-   - 🟨 : Letter is present in target word, wrong position.
-   - ⬛ : Letter is absent from target word.
-5. Players have up to **6 attempts** to solve the word. Click **Restart** to reset the board.
+4. When the transaction confirms, tiles show:
+   - 🟩 : Correct position
+   - 🟨 : Letter in the word but wrong position
+   - ⬛ : Letter not in the word
+5. You have 6 guesses. Click **Restart** for a new board.
+
+**Note:** Testnet only. The session key is stored unencrypted in the browser, which is fine for test ETH but not real funds. Use **Refund Session** before clearing browser data.
+
+---
+
+## 5. Known Limitations & Future Work
+
+- **The target word is public:** Everything on a public blockchain is readable, so `APPLE` can be read from the contract code on Etherscan. This project demonstrates on-chain validation against a pre-set word, not a hidden answer. A real fix is zero-knowledge proofs (ZK Wordle): the owner publishes only a hash of the word, and each result comes with a proof that it is correct for the committed word, so the contract can verify results without learning the word.
+- **Game rules live in the browser:** The contract stores no game state. The 6-guess limit and Restart exist only in `index.html`, and the contract does not record who won. A future version would track attempts and solved status per player on-chain.
+- **Other ideas:** accept only real dictionary words (for example via a Merkle proof of a word list) and add contract tests for repeated-letter cases like `PPPPP` and `ALLEE`.

@@ -390,6 +390,13 @@
             try {
                 await window.ethereum.request({ method: 'eth_requestAccounts' });
                 provider = new ethers.providers.Web3Provider(window.ethereum);
+
+                const net = await provider.getNetwork();
+                if (net.chainId !== 11155111) {
+                    statusEl.innerText = "Please switch MetaMask to Sepolia.";
+                    return;
+                }
+
                 mainSigner = provider.getSigner();
 
                 burnerWallet = new ethers.Wallet(burnerPK, provider);
@@ -453,6 +460,7 @@
                 await tx.wait();
                 statusEl.innerText = "Session balance refunded to your wallet!";
                 refundBtn.style.display = "none";
+                refundBtn.disabled = false;
                 guessInput.disabled = true;
                 guessBtn.disabled = true;
                 connectBtn.innerText = "Connect & Auto-Sign";
